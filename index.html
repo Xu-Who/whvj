@@ -121,30 +121,23 @@
         }
 
         .cell {
-            width: 100px;
-            height: 100px;
+            width: 106px;
+            height: 106px;
             background: rgba(238, 228, 218, 0.35);
             border-radius: 8px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 2rem;
-            font-weight: bold;
-            color: #776e65;
-            transition: all 0.15s ease-in-out;
         }
 
         .tile {
             position: absolute;
-            width: 100px;
-            height: 100px;
+            width: 106px;
+            height: 106px;
             border-radius: 8px;
             display: flex;
             justify-content: center;
             align-items: center;
             font-size: 2rem;
             font-weight: bold;
-            transition: all 0.15s ease-in-out;
+            transition: transform 0.2s ease-in-out, opacity 0.2s ease-in-out;
             animation: appear 0.2s ease-in-out;
         }
 
@@ -153,9 +146,28 @@
                 transform: scale(0);
                 opacity: 0;
             }
+            50% {
+                transform: scale(1.1);
+            }
             100% {
                 transform: scale(1);
                 opacity: 1;
+            }
+        }
+
+        .tile.merged {
+            animation: merge 0.2s ease-in-out;
+        }
+
+        @keyframes merge {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.15);
+            }
+            100% {
+                transform: scale(1);
             }
         }
 
@@ -243,6 +255,18 @@
             h1 {
                 font-size: 2.5rem;
             }
+            .score-container {
+                gap: 10px;
+            }
+            .score-box {
+                padding: 10px 20px;
+            }
+            .score-label {
+                font-size: 0.75rem;
+            }
+            .score-value {
+                font-size: 1.4rem;
+            }
             .cell, .tile {
                 width: 70px;
                 height: 70px;
@@ -262,6 +286,39 @@
             }
             .game-board {
                 padding: 10px;
+            }
+            .controls {
+                margin-top: 15px;
+            }
+            .btn {
+                padding: 10px 20px;
+                font-size: 0.9rem;
+            }
+        }
+
+        @media (max-width: 400px) {
+            h1 {
+                font-size: 2rem;
+            }
+            .cell, .tile {
+                width: 60px;
+                height: 60px;
+                font-size: 1.3rem;
+            }
+            .tile-128, .tile-256, .tile-512 {
+                font-size: 1.1rem;
+            }
+            .tile-1024, .tile-2048 {
+                font-size: 0.9rem;
+            }
+            .tile-super {
+                font-size: 0.8rem;
+            }
+            .grid {
+                gap: 8px;
+            }
+            .game-board {
+                padding: 8px;
             }
         }
     </style>
@@ -322,6 +379,9 @@
                 this.score = 0;
                 this.best = parseInt(localStorage.getItem('best2048')) || 0;
                 this.gridElement = document.getElementById('grid');
+                this.cellSize = 106;
+                this.cellGap = 15;
+                this.animating = false;
                 this.init();
             }
 
@@ -337,6 +397,22 @@
                 this.addRandomTile();
                 this.updateDisplay();
                 this.setupControls();
+                this.updateCellSize();
+                window.addEventListener('resize', () => this.updateCellSize());
+            }
+
+            updateCellSize() {
+                const width = window.innerWidth;
+                if (width <= 400) {
+                    this.cellSize = 60;
+                    this.cellGap = 8;
+                } else if (width <= 600) {
+                    this.cellSize = 70;
+                    this.cellGap = 10;
+                } else {
+                    this.cellSize = 106;
+                    this.cellGap = 15;
+                }
             }
 
             addRandomTile() {
@@ -367,8 +443,9 @@
                             const tile = document.createElement('div');
                             tile.className = `tile tile-${value > 2048 ? 'super' : value}`;
                             tile.textContent = value;
-                            tile.style.left = `${c * 115}px`;
-                            tile.style.top = `${r * 115}px`;
+                            const left = c * (this.cellSize + this.cellGap);
+                            const top = r * (this.cellSize + this.cellGap);
+                            tile.style.transform = `translate(${left}px, ${top}px)`;
                             this.gridElement.appendChild(tile);
                         }
                     }
@@ -379,90 +456,109 @@
             }
 
             move(direction) {
+                if (this.animating) return;
+
                 let moved = false;
                 const oldGrid = JSON.stringify(this.grid);
+                const newGrid = this.grid.map(row => [...row]);
 
                 if (direction === 'left') {
                     for (let r = 0; r < 4; r++) {
-                        const row = this.grid[r].filter(val => val !== 0);
-                        for (let i = 0; i < row.length - 1; i++) {
-                            if (row[i] === row[i + 1]) {
+                        const row = newGrid[r].filter(val => val !== 0);
+                        const merged = [];
+                        for (let i = 0; i < row.length; i++) {
+                            if (i < row.length - 1 && row[i] === row[i + 1] && !merged[i]) {
                                 row[i] *= 2;
                                 this.score += row[i];
                                 row.splice(i + 1, 1);
+                                merged[i] = true;
                             }
                         }
                         while (row.length < 4) row.push(0);
-                        this.grid[r] = row;
+                        newGrid[r] = row;
                     }
                 } else if (direction === 'right') {
                     for (let r = 0; r < 4; r++) {
-                        const row = this.grid[r].filter(val => val !== 0);
-                        for (let i = row.length - 1; i > 0; i--) {
-                            if (row[i] === row[i - 1]) {
+                        const row = newGrid[r].filter(val => val !== 0);
+                        const merged = [];
+                        for (let i = row.length - 1; i >= 0; i--) {
+                            if (i > 0 && row[i] === row[i - 1] && !merged[i]) {
                                 row[i] *= 2;
                                 this.score += row[i];
                                 row.splice(i - 1, 1);
+                                merged[i] = true;
                                 i--;
                             }
                         }
                         while (row.length < 4) row.unshift(0);
-                        this.grid[r] = row;
+                        newGrid[r] = row;
                     }
                 } else if (direction === 'up') {
                     for (let c = 0; c < 4; c++) {
                         const col = [];
                         for (let r = 0; r < 4; r++) {
-                            if (this.grid[r][c] !== 0) col.push(this.grid[r][c]);
+                            if (newGrid[r][c] !== 0) col.push(newGrid[r][c]);
                         }
-                        for (let i = 0; i < col.length - 1; i++) {
-                            if (col[i] === col[i + 1]) {
+                        const merged = [];
+                        for (let i = 0; i < col.length; i++) {
+                            if (i < col.length - 1 && col[i] === col[i + 1] && !merged[i]) {
                                 col[i] *= 2;
                                 this.score += col[i];
                                 col.splice(i + 1, 1);
+                                merged[i] = true;
                             }
                         }
                         while (col.length < 4) col.push(0);
                         for (let r = 0; r < 4; r++) {
-                            this.grid[r][c] = col[r];
+                            newGrid[r][c] = col[r];
                         }
                     }
                 } else if (direction === 'down') {
                     for (let c = 0; c < 4; c++) {
                         const col = [];
                         for (let r = 0; r < 4; r++) {
-                            if (this.grid[r][c] !== 0) col.push(this.grid[r][c]);
+                            if (newGrid[r][c] !== 0) col.push(newGrid[r][c]);
                         }
-                        for (let i = col.length - 1; i > 0; i--) {
-                            if (col[i] === col[i - 1]) {
+                        const merged = [];
+                        for (let i = col.length - 1; i >= 0; i--) {
+                            if (i > 0 && col[i] === col[i - 1] && !merged[i]) {
                                 col[i] *= 2;
                                 this.score += col[i];
                                 col.splice(i - 1, 1);
+                                merged[i] = true;
                                 i--;
                             }
                         }
                         while (col.length < 4) col.unshift(0);
                         for (let r = 0; r < 4; r++) {
-                            this.grid[r][c] = col[r];
+                            newGrid[r][c] = col[r];
                         }
                     }
                 }
 
-                moved = oldGrid !== JSON.stringify(this.grid);
+                moved = oldGrid !== JSON.stringify(newGrid);
 
                 if (moved) {
-                    this.addRandomTile();
+                    this.animating = true;
+                    this.grid = newGrid;
                     this.updateDisplay();
 
-                    if (this.score > this.best) {
-                        this.best = this.score;
-                        localStorage.setItem('best2048', this.best);
-                    }
+                    setTimeout(() => {
+                        this.addRandomTile();
+                        this.updateDisplay();
+                        this.animating = false;
 
-                    if (this.isGameOver()) {
-                        document.getElementById('finalScore').textContent = this.score;
-                        document.getElementById('gameOver').classList.add('show');
-                    }
+                        if (this.score > this.best) {
+                            this.best = this.score;
+                            localStorage.setItem('best2048', this.best);
+                            this.updateDisplay();
+                        }
+
+                        if (this.isGameOver()) {
+                            document.getElementById('finalScore').textContent = this.score;
+                            document.getElementById('gameOver').classList.add('show');
+                        }
+                    }, 200);
                 }
             }
 
@@ -491,44 +587,48 @@
             setupControls() {
                 // Keyboard controls
                 document.addEventListener('keydown', (e) => {
-                    if (e.key === 'ArrowLeft') {
+                    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
                         e.preventDefault();
-                        this.move('left');
-                    } else if (e.key === 'ArrowRight') {
-                        e.preventDefault();
-                        this.move('right');
-                    } else if (e.key === 'ArrowUp') {
-                        e.preventDefault();
-                        this.move('up');
-                    } else if (e.key === 'ArrowDown') {
-                        e.preventDefault();
-                        this.move('down');
+                        if (e.key === 'ArrowLeft') this.move('left');
+                        else if (e.key === 'ArrowRight') this.move('right');
+                        else if (e.key === 'ArrowUp') this.move('up');
+                        else if (e.key === 'ArrowDown') this.move('down');
                     }
                 });
 
                 // Touch controls
                 let touchStartX = 0;
                 let touchStartY = 0;
+                let touchEndX = 0;
+                let touchEndY = 0;
 
                 this.gridElement.addEventListener('touchstart', (e) => {
                     touchStartX = e.touches[0].clientX;
                     touchStartY = e.touches[0].clientY;
-                });
+                }, { passive: true });
+
+                this.gridElement.addEventListener('touchmove', (e) => {
+                    touchEndX = e.touches[0].clientX;
+                    touchEndY = e.touches[0].clientY;
+                }, { passive: true });
 
                 this.gridElement.addEventListener('touchend', (e) => {
-                    const touchEndX = e.changedTouches[0].clientX;
-                    const touchEndY = e.changedTouches[0].clientY;
                     const dx = touchEndX - touchStartX;
                     const dy = touchEndY - touchStartY;
+                    const minSwipeDistance = 30;
 
                     if (Math.abs(dx) > Math.abs(dy)) {
-                        if (dx > 30) this.move('right');
-                        else if (dx < -30) this.move('left');
+                        if (Math.abs(dx) > minSwipeDistance) {
+                            if (dx > 0) this.move('right');
+                            else this.move('left');
+                        }
                     } else {
-                        if (dy > 30) this.move('down');
-                        else if (dy < -30) this.move('up');
+                        if (Math.abs(dy) > minSwipeDistance) {
+                            if (dy > 0) this.move('down');
+                            else this.move('up');
+                        }
                     }
-                });
+                }, { passive: true });
             }
 
             restart() {
